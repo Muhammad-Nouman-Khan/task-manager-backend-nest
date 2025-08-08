@@ -135,9 +135,13 @@ export class TasksService {
     return this.assignmentRepo.save(assignment);
   }
 
-  async unassignUser(taskId: number, userId: number): Promise<void> {
+  async unassignUser(
+    taskId: number,
+    userId: number,
+  ): Promise<{ message: string }> {
     const result = await this.assignmentRepo.delete({ taskId, userId });
     if (!result.affected) throw new NotFoundException('Assignment not found');
+    return { message: 'User unassigned from task' };
   }
 
   async updateAssignmentStatus(
