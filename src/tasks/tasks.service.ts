@@ -1,8 +1,15 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Task, TaskOverallStatus, TaskPriority } from './entities/task.entity';
 import { Repository } from 'typeorm';
-import { TaskAssignment } from './entities/task-assignment.entity';
+import {
+  TaskAssignment,
+  TaskIndividualStatus,
+} from './entities/task-assignment.entity';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { QueryTasksDto } from './dto/query-tasks.dto';
@@ -93,5 +100,111 @@ export class TasksService {
     });
     if (!task) throw new NotFoundException('Task not found');
     return task;
+  }
+
+  // Assignments
+
+  async listAssignments(taskId: number): Promise<TaskAssignment[]> {
+    await this.ensureTaskExists(taskId);
+    return this.assignmentRepo.find({
+      where: { taskId },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async assignUser(
+    taskId: number,
+    userId: number,
+    notes?: string,
+  ): Promise<TaskAssignment> {
+    await this.ensureTaskExists(taskId);
+
+    const existing = await this.assignmentRepo.findOne({
+      where: { taskId, userId },
+    });
+    if (existing)
+      throw new ConflictException('User already assigned to this task');
+
+    const assignment = this.assignmentRepo.create({
+      taskId,
+      userId,
+      individualStatus: TaskIndividualStatus.PENDING,
+      assignedAt: new Date(),
+      notes: notes ?? null,
+    });
+    return this.assignmentRepo.save(assignment);
+  }
+
+  async unassignUser(taskId: number, userId: number): Promise<void> {
+    const result = await this.assignmentRepo.delete({ taskId, userId });
+    if (!result.affected) throw new NotFoundException('Assignment not found');
+  }
+
+  async updateAssignmentStatus(
+    taskId: number,
+    userId: number,
+    status: TaskIndividualStatus,
+    notes?: string,
+  ) {
+    const a = await this.assignmentRepo.findOne({ where: { taskId, userId } });
+    if (!a) throw new NotFoundException('Assignment not found');
+
+    a.individualStatus = status;
+    if (notes !== undefined) a.notes = notes;
+
+    if (status === TaskIndividualStatus.COMPLETED) {
+      a.completedAt = a.completedAt ?? new Date();
+    } else {
+      a.completedAt = null;
+    }
+
+    const saved = await this.assignmentRepo.save(a);
+
+    // Optional rollup: if all assignments are completed, set overallStatus to COMPLETED; if any in progress, set IN_PROGRESS
+    await this.rollupOverallStatus(taskId);
+
+    return saved;
+  }
+
+  async updateAssignment(
+    taskId: number,
+    userId: number,
+    attrs: { notes?: string },
+  ) {
+    const a = await this.assignmentRepo.findOne({ where: { taskId, userId } });
+    if (!a) throw new NotFoundException('Assignment not found');
+
+    if (attrs.notes !== undefined) a.notes = attrs.notes;
+    return this.assignmentRepo.save(a);
+  }
+
+  private async ensureTaskExists(taskId: number): Promise<void> {
+    const exists = await this.taskRepo.exist({ where: { id: taskId } });
+    if (!exists) throw new NotFoundException('Task not found');
+  }
+
+  private async rollupOverallStatus(taskId: number) {
+    const assignments = await this.assignmentRepo.find({ where: { taskId } });
+    if (assignments.length === 0) return;
+
+    const allCompleted = assignments.every(
+      (a) => a.individualStatus === TaskIndividualStatus.COMPLETED,
+    );
+    const anyInProgress = assignments.some(
+      (a) => a.individualStatus === TaskIndividualStatus.IN_PROGRESS,
+    );
+
+    const task = await this.findOne(taskId);
+    if (allCompleted) {
+      if (task.overallStatus !== TaskOverallStatus.COMPLETED) {
+        task.overallStatus = TaskOverallStatus.COMPLETED;
+        await this.taskRepo.save(task);
+      }
+    } else if (anyInProgress) {
+      if (task.overallStatus !== TaskOverallStatus.IN_PROGRESS) {
+        task.overallStatus = TaskOverallStatus.IN_PROGRESS;
+        await this.taskRepo.save(task);
+      }
+    }
   }
 }
