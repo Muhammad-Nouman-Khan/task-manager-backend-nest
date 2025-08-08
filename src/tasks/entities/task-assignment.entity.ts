@@ -26,15 +26,15 @@ export class TaskAssignment {
   @Index()
   taskId: number;
 
+  @Column({ type: 'int' })
+  @Index()
+  userId: number;
+
   // ManyToOne is a TypeORM decorator that defines a many-to-one relationship between two entities.
   // In this case, a TaskAssignment belongs to a Task.
   // The onDelete option is set to CASCADE, which means that when a Task is deleted, the TaskAssignments will also be deleted.
   @ManyToOne(() => Task, (t) => t.assignments, { onDelete: 'CASCADE' })
   task: Task;
-
-  @Column({ type: 'int' })
-  @Index()
-  userId: number;
 
   @Column({
     type: 'enum',
