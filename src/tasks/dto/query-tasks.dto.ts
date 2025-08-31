@@ -1,5 +1,6 @@
 import { IsOptional, IsEnum, IsInt, Min } from 'class-validator';
 import { TaskOverallStatus, TaskPriority } from '../entities/task.entity';
+import { Type } from 'class-transformer';
 
 export class QueryTasksDto {
   @IsOptional()
@@ -18,15 +19,18 @@ export class QueryTasksDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Type(() => Number)
   createdByUserId?: number;
 
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Type(() => Number)
   skip?: number;
 
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Type(() => Number)
   take?: number;
 }
